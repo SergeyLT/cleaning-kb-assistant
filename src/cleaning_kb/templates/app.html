@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="app-frame">
+  <header class="rail">
+    <a href="#dialogs" class="brand" aria-label="Демо-клининг — диалоги"><span class="brand-symbol" aria-hidden="true">дк</span><span>Демо-клининг<small>Помощник менеджера</small></span></a>
+    <nav aria-label="Разделы" class="navigation">
+      <a href="#dialogs" data-nav="dialogs"><span aria-hidden="true">◫</span> Диалоги</a>
+      <a href="#documents" data-nav="documents"><span aria-hidden="true">▤</span> Документы</a>
+      <a href="#history" data-nav="history"><span aria-hidden="true">◷</span> История</a>
+    </nav>
+    <div class="rail-footer"><p class="small muted">Общая база знаний.<br>Отдельные обращения.</p><button id="logout" class="button secondary">Выйти</button></div>
+  </header>
+  <main id="main" class="workspace" tabindex="-1">
+    <div id="feedback" role="status" aria-live="polite" hidden></div>
+    <div id="view" aria-busy="true"><p class="muted">Загрузка рабочего пространства…</p></div>
+  </main>
+</div>
+<dialog id="action-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
+{% endblock %}

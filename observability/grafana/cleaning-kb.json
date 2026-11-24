@@ -1,0 +1,532 @@
+{
+  "uid": "cleaning-kb-operations",
+  "title": "Помощник клининга · операции",
+  "tags": [
+    "cleaning-kb",
+    "logs"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "loki",
+        "label": "Loki",
+        "type": "datasource",
+        "query": "loki",
+        "refresh": 1
+      },
+      {
+        "name": "project",
+        "label": "Проект",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "$loki"
+        },
+        "query": "label_values({service_name=\"cleaning-kb\"}, project)",
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true
+      },
+      {
+        "name": "environment",
+        "label": "Окружение",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "$loki"
+        },
+        "query": "label_values({project=~\"$project\"}, environment)",
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true
+      },
+      {
+        "name": "version",
+        "label": "Версия / SHA (regex)",
+        "type": "textbox",
+        "query": ".*",
+        "current": {
+          "value": ".*",
+          "text": ".*"
+        }
+      },
+      {
+        "name": "request_id",
+        "label": "request_id (regex)",
+        "type": "textbox",
+        "query": ".*",
+        "current": {
+          "value": ".*",
+          "text": ".*"
+        }
+      },
+      {
+        "name": "operation_id",
+        "label": "operation_id (regex)",
+        "type": "textbox",
+        "query": ".*",
+        "current": {
+          "value": ".*",
+          "text": ".*"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Последние события",
+      "type": "logs",
+      "description": "JSON-события. Для пустого фильтра ID оставьте .*; используйте точный UUID для корреляции.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | request_id=~\"${request_id:raw}\" | operation_id=~\"${operation_id:raw}\"",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 2,
+      "title": "HTTP по статусу",
+      "type": "timeseries",
+      "description": "Записи завершения запроса; 4xx/5xx учитываются по status.",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(status) (count_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"request_completed\" [$__auto]))",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Ошибки и отклонения",
+      "type": "logs",
+      "description": "Без исходного текста исключений; error_code/category/type и stack_frames доступны в JSON.",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | level=~\"ERROR|WARNING\"",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 4,
+      "title": "HTTP p95, мс",
+      "type": "timeseries",
+      "description": "По логам, не метрика внешней доступности.",
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"request_completed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (project)",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Операции RAG и итоги",
+      "type": "timeseries",
+      "description": "operation=index/answer/summary. Состояние очереди проверки смотрите в приложении.",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(operation,event) (count_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=~\"rag_operation_completed|rag_operation_failed\" [$__auto]))",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Вызовы провайдера",
+      "type": "timeseries",
+      "description": "stage=generation/embedding. Rewrite и summary входят в generation.",
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(event,stage) (count_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=~\"provider_call_completed|provider_call_failed\" [$__auto]))",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Входные токены провайдера",
+      "type": "timeseries",
+      "description": "Только сообщённый usage; отсутствие usage даёт отсутствие данных, не 0. Не стоимость.",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(model) (sum_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"provider_call_completed\" | usage_available=\"true\" | unwrap input_tokens | __error__=\"\" [$__auto]))",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Выходные токены провайдера",
+      "type": "timeseries",
+      "description": "Только сообщённый usage. Нулевой completion у embedding допустим.",
+      "gridPos": {
+        "x": 12,
+        "y": 27,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(model) (sum_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"provider_call_completed\" | usage_available=\"true\" | unwrap output_tokens | __error__=\"\" [$__auto]))",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Провайдер p95, мс",
+      "type": "timeseries",
+      "description": "Время завершённых вызовов без скрытых сетевых повторов.",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"provider_call_completed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (model,stage)",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Лимиты и ошибки зависимостей",
+      "type": "logs",
+      "description": "Фильтруйте provider_budget_exceeded/dialog_limit_reached и ошибки векторов/провайдера; это диагностические события.",
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | error_code=~\".+\"",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 11,
+      "title": "Запуски и остановки версий",
+      "type": "logs",
+      "description": "После deploy отфильтруйте полный SHA в поле version.",
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "$loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=~\"application_started|application_stopped|startup_failed\"",
+          "queryType": "range",
+          "datasource": {
+            "type": "loki",
+            "uid": "$loki"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Нет данных"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+// Добавьте к существующему Alloy. Не подключайте параллельно другому сборщику этих контейнеров.
+discovery.docker "cleaning_kb" {
+  host = "unix:///var/run/docker.sock"
+  refresh_interval = "10s"
+  filter {
+    name = "label"
+    values = ["io.cleaning-kb.logs=true"]
+  }
+}
+
+discovery.relabel "cleaning_kb" {
+  targets = []
+  rule {
+    source_labels = ["__meta_docker_container_label_io_cleaning_kb_project"]
+    target_label = "project"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_io_cleaning_kb_environment"]
+    target_label = "environment"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label = "compose_service"
+  }
+}
+
+// Docker API уже возвращает строку приложения: stage.docker здесь не нужен.
+loki.source.docker "cleaning_kb" {
+  host = "unix:///var/run/docker.sock"
+  targets = discovery.docker.cleaning_kb.targets
+  relabel_rules = discovery.relabel.cleaning_kb.rules
+  labels = {source = "docker", service_name = "cleaning-kb"}
+  forward_to = [loki.process.cleaning_kb.receiver]
+}
+
+loki.process "cleaning_kb" {
+  stage.json {
+    expressions = {timestamp = "timestamp"}
+  }
+  stage.timestamp {
+    source = "timestamp"
+    format = "RFC3339Nano"
+    action_on_failure = "skip"
+  }
+  forward_to = [loki.write.cleaning_kb.receiver]
+}
+
+// Для авторизованного Loki используйте существующий loki.write вместо этого блока.
+loki.write "cleaning_kb" {
+  endpoint {
+    url = sys.env("CLEANING_KB_LOKI_PUSH_URL")
+  }
+}

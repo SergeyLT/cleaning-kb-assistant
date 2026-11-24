@@ -1,0 +1,64 @@
+services:
+  api:
+    build: .
+    image: cleaning-kb:local
+    environment:
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-local}
+      APP_BASE_URL: ${APP_BASE_URL:-http://127.0.0.1:8001}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-manager}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Создайте .env командой init-env}
+      API_KEY: ${API_KEY:?Создайте .env командой init-env}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
+      LOGIN_ATTEMPTS_PER_MINUTE: ${LOGIN_ATTEMPTS_PER_MINUTE:-10}
+      MAX_REQUEST_BYTES: ${MAX_REQUEST_BYTES:-1048576}
+      DATABASE_PATH: /data/cleaning-kb.sqlite3
+      QDRANT_URL: http://qdrant:6333
+      DEPENDENCY_TIMEOUT_SECONDS: ${DEPENDENCY_TIMEOUT_SECONDS:-2}
+      PROXYAPI_KEY: ${PROXYAPI_KEY:-}
+      PROXYAPI_BASE_URL: ${PROXYAPI_BASE_URL:-https://api.proxyapi.ru/v1}
+      GENERATION_MODEL: ${GENERATION_MODEL:-openai/gpt-4.1-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1536}
+      PROVIDER_TIMEOUT_SECONDS: ${PROVIDER_TIMEOUT_SECONDS:-45}
+      PROVIDER_CALLS_PER_MINUTE: ${PROVIDER_CALLS_PER_MINUTE:-20}
+      PROVIDER_CALLS_PER_DAY: ${PROVIDER_CALLS_PER_DAY:-200}
+      PROVIDER_TOKEN_BUDGET_PER_DAY: ${PROVIDER_TOKEN_BUDGET_PER_DAY:-500000}
+      MAX_ANSWER_TOKENS: ${MAX_ANSWER_TOKENS:-1600}
+      MAX_DOCUMENT_CHARS: ${MAX_DOCUMENT_CHARS:-30000}
+      MAX_CONTEXT_CHARS: ${MAX_CONTEXT_CHARS:-14000}
+      RETRIEVAL_TOP_K: ${RETRIEVAL_TOP_K:-8}
+      RETRIEVAL_MIN_SCORE: ${RETRIEVAL_MIN_SCORE:-0.2}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.7}
+      DIALOG_MAX_TOKENS: ${DIALOG_MAX_TOKENS:-16000}
+      SUMMARY_MAX_TOKENS: ${SUMMARY_MAX_TOKENS:-2400}
+    ports:
+      - "127.0.0.1:${HOST_PORT:-8001}:8000"
+    volumes:
+      - app-data:/data
+    depends_on:
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  qdrant:
+    image: qdrant/qdrant:v1.17.0@sha256:f1c7272cdac52b38c1a0e89313922d940ba50afd90d593a1605dbbc214e66ffb
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  app-data:
+  qdrant-data:

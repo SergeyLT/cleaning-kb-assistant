@@ -1,0 +1,59 @@
+# Подключение журналов к существующему стеку
+
+Маршрут: приложение → JSON stdout → Docker → Alloy → Loki → Grafana. Здесь нет второго production-стека. Нужны уже работающие Loki/Alloy/Grafana, сетевой доступ Alloy к Loki и чтение Docker API на том же хосте. Docker socket даёт широкие полномочия даже при bind `:ro`; используйте существующий контролируемый механизм доступа или socket proxy по политике сервера.
+
+## Сбор
+
+Production Compose маркирует **только api**:
+
+```text
+io.cleaning-kb.logs=true
+io.cleaning-kb.project=cleaning-kb
+io.cleaning-kb.environment=production
+```
+
+`OBSERVABILITY_PROJECT` позволяет отличить несколько установок. Стабильные Loki labels: `project`, `environment`, `compose_service`, `source`, `service_name`. Request/operation ID, версия, модель и ошибки остаются JSON-полями, без отдельной метки на каждый ID/SHA.
+
+Сначала изучите существующий pipeline. Если он уже собирает эти контейнеры, добавьте в него relabel этих меток и используйте его единственный маршрут записи. Не добавляйте параллельный сборщик: иначе события задвоятся.
+
+Если контейнер ещё не собирается, добавьте [cleaning-kb.alloy](alloy/cleaning-kb.alloy) в существующую конфигурацию Alloy. Объединение файла выполняется согласно способу запуска вашего Alloy; наличие файла в каталоге само по себе его не подключает. Укажите `CLEANING_KB_LOKI_PUSH_URL`, например внутренний `http://loki:3100/loki/api/v1/push`. Для Loki с auth/tenant используйте существующий `loki.write` и направьте `forward_to` туда; секреты не помещайте в этот файл. Сохраните persistent storage Alloy для positions и очереди доставки. Не меняйте конфигурацию сбора других сервисов.
+
+`loki.source.docker` читает распакованную строку через Docker API. `stage.docker` в этом маршруте не нужен. Для существующего сборщика файлов `/var/lib/docker/containers/*/*-json.log` envelope нужно снять **ровно один раз** до JSON-разбора приложения. Pipeline сохраняет полный JSON, извлекает timestamp приложения в RFC3339Nano; неудачный разбор времени оставляет время чтения. Qdrant не маркируется: его штатные журналы могут собираться существующим инфраструктурным маршрутом отдельно.
+
+Проверка синтаксиса на установленном Alloy:
+
+```sh
+alloy validate /path/to/combined-config.alloy
+```
+
+Проверяйте именно объединённую конфигурацию, с нужными переменными окружения и без дублирующихся имён компонентов. Текущий пример локально проверяется на Alloy 1.12.2; на VPS сохраняйте свою закреплённую совместимую версию. Docker logs приложения ограничены 10 МБ × 3. Retention Loki и права Grafana задаются существующей установкой; не считайте их автоматически настроенными этим проектом.
+
+## Dashboard
+
+В Grafana импортируйте [cleaning-kb.json](grafana/cleaning-kb.json), выберите свой Loki datasource в переменной «Loki», затем проект и окружение. Фильтр «Версия / SHA» принимает regex; `.*` означает все версии. Request/operation ID фильтруют панель «Последние события»: вставьте UUID из ответа API или истории, для отсутствия фильтра оставьте `.*`. Фильтры regex используйте для технических ID, не для клиентских данных.
+
+Панели показывают HTTP по статусу, p95 времени HTTP/провайдера, ошибки и отклонения, RAG/индексацию/итоги, вызовы провайдера и сообщённые входные/выходные токены, лимиты и запуск версий. Они не показывают состояние очереди менеджера, истинность ответов, денежную стоимость, CPU/RAM или внешнюю доступность без источника метрик. Отсутствующий usage — отсутствие данных, не нулевой расход.
+
+Контрольная запись без модели:
+
+```sh
+curl -i https://assistant.example.com/health
+```
+
+Скопируйте серверный `X-Request-ID`. В Explore:
+
+```logql
+{project="cleaning-kb", environment="production", compose_service="api"} | json | request_id="<UUID>"
+```
+
+Проверьте `event=request_completed`, status, timestamp, environment и полный SHA. Затем безопасно запросите защищённый `/api/status` **без ключа**: ожидается 401 и диагностическое отклонение, без секретов. Проверьте, что одно HTTP-действие не создаёт дубликат одного и того же события. Разные события request_rejected и request_completed для одного запроса нормальны.
+
+Пример разбора платного вызова по сохранённому ID:
+
+```logql
+{project="cleaning-kb", environment="production"} | json | operation_id="<UUID>"
+```
+
+Не запускайте оплачиваемую генерацию только ради заполнения пустой панели. После обычного рабочего запроса проверьте provider_call_started/completed либо failed, безопасный error_code и связь с request_id. Отсутствие записей не означает отсутствие ошибок: сначала подтвердите контрольную доставку и диапазон времени.
+
+Официальная документация: [Alloy Docker](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.source.docker/), [JSON pipeline](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.process/), [LogQL](https://grafana.com/docs/loki/latest/query/).

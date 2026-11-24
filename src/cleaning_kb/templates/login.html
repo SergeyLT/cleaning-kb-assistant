@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Вход · Демо-клининг{% endblock %}
+{% block page %}login{% endblock %}
+{% block content %}
+<main id="main" class="login-layout">
+  <section class="login-intro" aria-label="О помощнике">
+    <div class="brand"><span class="brand-symbol" aria-hidden="true">дк</span><span>Демо-клининг<small>Помощник менеджера</small></span></div>
+    <p class="eyebrow">Знания компании — под рукой</p>
+    <h1>Меньше поиска.<br>Больше ясности.</h1>
+    <p class="lead">Разбирайте обращения, находите условия в документах и сохраняйте ход беседы.</p>
+    <ul class="intro-points"><li>Ответы с проверяемыми источниками</li><li>Отдельный диалог для каждого обращения</li><li>Понятно, что ещё нужно уточнить</li></ul>
+    <p class="muted small">Рабочее пространство вымышленной компании</p>
+  </section>
+  <section class="login-card card" aria-labelledby="login-heading">
+    <span class="eyebrow">Рабочее пространство</span>
+    <h2 id="login-heading">Вход в панель</h2>
+    <p class="muted">Используйте учётную запись менеджера.</p>
+    <form id="login-form">
+      <label for="username">Логин</label>
+      <input id="username" name="username" autocomplete="username" placeholder="manager" maxlength="80" required autofocus>
+      <label for="password">Пароль</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required>
+      <p id="login-error" class="form-error" role="alert" hidden></p>
+      <button type="submit" class="button primary full">Войти</button>
+    </form>
+    <p class="muted small">Доступ к документам и диалогам ограничен.</p>
+  </section>
+</main>
+{% endblock %}

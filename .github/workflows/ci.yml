@@ -1,0 +1,127 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# main целиком сериализован: latest не меняется во время проверки deploy.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Установить зависимости
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -e '.[dev]'
+          .venv/bin/python -c 'from cleaning_kb.budget import prepare_tokenizer; prepare_tokenizer()'
+          npm ci
+          PLAYWRIGHT_BROWSERS_PATH="$PWD/.tmp/ms-playwright" npx playwright install --with-deps chromium webkit
+      - name: Проверить Python
+        run: |
+          .venv/bin/python -m ruff check .
+          .venv/bin/python -m ruff format --check .
+          .venv/bin/python -m mypy src
+          .venv/bin/python -m pytest
+      - name: Проверить UI без платного API
+        run: npm run test:ui
+      - name: Проверить Docker-сборку PR или ручного запуска без публикации
+        if: github.event_name != 'push'
+        run: docker build --build-arg APP_VERSION="$GITHUB_SHA" -t cleaning-kb:check .
+      - name: Сохранить отчёт UI при ошибке
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ui-test-results
+          path: .tmp/playwright/
+          retention-days: 7
+
+  build:
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      published: ${{ steps.context.outputs.publish }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Определить образ и проверить актуальность main
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          echo "image=ghcr.io/${GH_REPO,,}" >> "$GITHUB_OUTPUT"
+          publish=false
+          if [[ "$EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            head_sha=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+            if [[ "$head_sha" == "$GITHUB_SHA" ]]; then publish=true; fi
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Войти в GHCR
+        if: steps.context.outputs.publish == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Собрать образ; публиковать только актуальный push main
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: ${{ steps.context.outputs.publish == 'true' }}
+          tags: |
+            ${{ steps.context.outputs.image }}:latest
+            ${{ steps.context.outputs.image }}:sha-${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: [checks, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.build.outputs.published == 'true' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Запустить один deploy и дождаться нужной версии
+        env:
+          COOLIFY_DEPLOY_WEBHOOK: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          APP_PUBLIC_URL: ${{ vars.APP_PUBLIC_URL }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: python scripts/deploy.py
