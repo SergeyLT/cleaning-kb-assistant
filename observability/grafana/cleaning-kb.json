@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "refresh": "30s",
   "time": {
@@ -31,11 +31,16 @@
           "type": "loki",
           "uid": "$loki"
         },
-        "query": "label_values({service_name=\"cleaning-kb\"}, project)",
+        "query": "label_values({source=\"docker\"}, project)",
         "refresh": 1,
         "includeAll": true,
         "allValue": ".*",
-        "multi": true
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all",
+          "selected": true
+        }
       },
       {
         "name": "environment",
@@ -45,11 +50,16 @@
           "type": "loki",
           "uid": "$loki"
         },
-        "query": "label_values({project=~\"$project\"}, environment)",
+        "query": "label_values({source=\"docker\", project=~\"$project\"}, environment)",
         "refresh": 1,
         "includeAll": true,
         "allValue": ".*",
-        "multi": true
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all",
+          "selected": true
+        }
       },
       {
         "name": "version",
@@ -102,7 +112,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | request_id=~\"${request_id:raw}\" | operation_id=~\"${operation_id:raw}\"",
+          "expr": "{source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | request_id=~\"${request_id:raw}\" | operation_id=~\"${operation_id:raw}\"",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -143,7 +153,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(status) (count_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"request_completed\" [$__auto]))",
+          "expr": "sum by(status) (count_over_time({source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | event=\"request_completed\" [$__auto]))",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -183,7 +193,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | level=~\"ERROR|WARNING\"",
+          "expr": "{source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | level=~\"ERROR|WARNING\"",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -224,7 +234,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.95, {project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"request_completed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (project)",
+          "expr": "quantile_over_time(0.95, {source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | event=\"request_completed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (project)",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -264,7 +274,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(operation,event) (count_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=~\"rag_operation_completed|rag_operation_failed\" [$__auto]))",
+          "expr": "sum by(operation,event) (count_over_time({source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | event=~\"rag_operation_completed|rag_operation_failed\" [$__auto]))",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -304,7 +314,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(event,stage) (count_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=~\"provider_call_completed|provider_call_failed\" [$__auto]))",
+          "expr": "sum by(event,stage) (count_over_time({source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | event=~\"provider_call_completed|provider_call_failed\" [$__auto]))",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -344,7 +354,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(model) (sum_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"provider_call_completed\" | usage_available=\"true\" | unwrap input_tokens | __error__=\"\" [$__auto]))",
+          "expr": "sum by(model) (sum_over_time({source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | event=\"provider_call_completed\" | usage_available=\"true\" | unwrap input_tokens | __error__=\"\" [$__auto]))",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -384,7 +394,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(model) (sum_over_time({project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"provider_call_completed\" | usage_available=\"true\" | unwrap output_tokens | __error__=\"\" [$__auto]))",
+          "expr": "sum by(model) (sum_over_time({source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | event=\"provider_call_completed\" | usage_available=\"true\" | unwrap output_tokens | __error__=\"\" [$__auto]))",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -424,7 +434,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.95, {project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=\"provider_call_completed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (model,stage)",
+          "expr": "quantile_over_time(0.95, {source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | event=\"provider_call_completed\" | unwrap duration_ms | __error__=\"\" [$__auto]) by (model,stage)",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -464,7 +474,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | error_code=~\".+\"",
+          "expr": "{source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | error_code=~\".+\"",
           "queryType": "range",
           "datasource": {
             "type": "loki",
@@ -505,7 +515,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{project=~\"$project\", environment=~\"$environment\", compose_service=\"api\"} | json | version=~\"${version:raw}\" | __error__=\"\" | event=~\"application_started|application_stopped|startup_failed\"",
+          "expr": "{source=\"docker\", project=~\"$project\", environment=~\"$environment\"} | json | service=\"cleaning-kb\" | version=~\"${version:raw}\" | __error__=\"\" | event=~\"application_started|application_stopped|startup_failed\"",
           "queryType": "range",
           "datasource": {
             "type": "loki",

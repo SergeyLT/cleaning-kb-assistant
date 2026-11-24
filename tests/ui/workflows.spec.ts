@@ -15,7 +15,7 @@ test('Документ: валидация, индексация, вопрос �
   await dialog.getByRole('button', { name: 'Добавить и обработать' }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole('heading', { name: 'Регламент с цитатой' })).toBeVisible();
-  await expect(page.getByText('В поиске', { exact: true })).toBeVisible();
+  await expect(page.getByText('Готов к поиску', { exact: true })).toBeVisible();
   await newConversation(page);
   await ask(page, 'Входит ли духовка в генеральную уборку?');
   await page.getByText('Источники (1)', { exact: true }).click();

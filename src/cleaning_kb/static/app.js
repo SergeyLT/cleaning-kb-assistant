@@ -236,7 +236,7 @@ async function dialogsView(id, query) {
     const blocked = selected.busy || busy(id);
     const budget = selected.budget;
     thread.append(node("header", { class: "thread-header" }, node("a", { class: "button quiet thread-back", href: "#dialogs" }, "← Все диалоги"), node("h2", {}, selected.title),
-      node("div", { class: "actions" }, button("Переименовать", () => renameConversation(selected), { disabled: blocked }), button("Экспорт JSON", () => exportConversation(id)), button("Удалить", () => deleteConversation(selected), { class: "button quiet danger", disabled: blocked }), button("Обновить", () => render())),
+      node("div", { class: "actions" }, button("Переименовать", () => renameConversation(selected), { disabled: blocked }), button("Экспорт JSON", () => exportConversation(id)), button("Удалить", () => deleteConversation(selected), { class: "button danger", disabled: blocked }), button("Обновить", () => render())),
       node("p", { class: "thread-budget" }, `Контекст: ${budget.used_tokens.toLocaleString("ru-RU")} / ${budget.max_tokens.toLocaleString("ru-RU")} токенов · следующий ответ требует резерва`),
       budget.warning && budget.can_ask ? node("p", { class: "notice warning" }, "Беседа приближается к пределу. Для отдельного обращения начните новый диалог.") : null,
       button(busy(id) ? "Выполняется…" : "Подвести итог", () => conversationAction(id, () => api(`/conversations/${id}/summary`, { method: "POST" }), "Итог сохранён в беседе."), { disabled: blocked || !selected.runs.some((r) => r.kind === "answer") })));
@@ -254,7 +254,7 @@ async function dialogsView(id, query) {
   }
   return node("div", {}, heading("Диалоги", "Ответы по документам, контекст обращения и понятные уточнения."), node("div", { class: "dialogs-layout" }, list, thread));
 }
-const indexingLabel = (doc) => !doc.is_active ? "Исключён из поиска" : ({ ready: "В поиске", failed: "Ошибка индексации", pending: "Ожидает индексации", indexing: "Индексируется…" }[doc.indexing_status] || "Не готов");
+const indexingLabel = (doc) => !doc.is_active ? "Исключён из поиска" : ({ ready: "Готов к поиску", failed: "Ошибка индексации", pending: "Ожидает индексации", indexing: "Индексируется…" }[doc.indexing_status] || "Не готов");
 function addDocument() {
   modal("Добавить документ", [...field("Название документа", "title"), ...field("Текст документа", "text", { multiline: true, maxLength: 100000 })], "Добавить и обработать", async (form) => {
     const values = new FormData(form);

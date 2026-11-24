@@ -45,6 +45,7 @@ small, .small { font-size: .8125rem; }
 .button.primary { color: #fff; background: var(--accent); border-color: var(--accent); }
 .button.primary:hover:not(:disabled) { background: var(--accent-dark); }
 .button.danger { color: var(--error); }
+.button.danger:hover:not(:disabled) { border-color: var(--error); background: var(--error-soft); }
 .button.full { width: 100%; }
 .button.quiet { border-color: transparent; background: transparent; color: var(--muted); }
 .actions { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
