@@ -46,5 +46,18 @@ export async function ask(page: Page, text: string, keyboard = false) {
   await expect(page.locator('#view')).toHaveAttribute('aria-busy', 'false');
 }
 export async function noOverflow(page: Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy();
+  const geometry = await page.evaluate(() => {
+    const viewport = document.documentElement.clientWidth;
+    return {
+      viewport,
+      width: document.documentElement.scrollWidth,
+      overflowing: Array.from(document.body.querySelectorAll('*')).flatMap((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.width && (rect.right > viewport || rect.left < 0)
+          ? [{ tag: element.tagName, class: element.className, left: rect.left, right: rect.right }]
+          : [];
+      }).slice(0, 15),
+    };
+  });
+  expect(geometry.width, `Горизонтальное переполнение: ${JSON.stringify(geometry)}`).toBeLessThanOrEqual(geometry.viewport);
 }

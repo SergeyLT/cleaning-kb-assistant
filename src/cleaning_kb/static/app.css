@@ -73,7 +73,7 @@ form > .button:last-child { margin-top: 1rem; }
 .rail-footer { display: contents; }
 .rail-footer p { display: none; }
 .rail-footer .button { order: 0; }
-.navigation { display: flex; gap: .5rem; width: 100%; order: 1; }
+.navigation { display: flex; flex-wrap: wrap; gap: .5rem; width: 100%; order: 1; }
 .navigation a { display: flex; justify-content: center; align-items: center; gap: .5rem; flex: 1; min-height: 44px; padding: .5rem; border-radius: 9px; font-size: .875rem; color: var(--muted); text-decoration: none; font-weight: 600; white-space: nowrap; }
 .navigation a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
 .navigation a:hover { background: var(--canvas); }

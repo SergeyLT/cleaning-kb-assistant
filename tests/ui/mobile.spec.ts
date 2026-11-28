@@ -4,11 +4,12 @@ test('Телефон: список, беседа, источник и основ
   await seedDocument(page);
   const documentsNav = page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Документы' });
   expect(await documentsNav.evaluate((link) => link.scrollWidth <= link.clientWidth)).toBeTruthy();
+  await noOverflow(page);
   const cid = await newConversation(page);
   await ask(page, 'Сколько точно будет стоить генеральная уборка?');
   await page.getByText('Источники (1)', { exact: true }).click();
   await page.getByRole('link', { name: 'Открыть документ' }).click();
-  await expect(page.getByRole('heading', { name: /Правила уборки/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Правила уборки/, level: 1 })).toBeVisible();
   await noOverflow(page);
   await page.getByRole('link', { name: '← Назад', exact: true }).click();
   await page.getByRole('button', { name: 'Отметить проверенным' }).click();
