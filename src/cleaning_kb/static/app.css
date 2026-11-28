@@ -92,6 +92,8 @@ form > .button:last-child { margin-top: 1rem; }
 .conversation-list .chip { margin-top: .5rem; }
 .thread-pane { min-width: 0; }
 .thread-header { padding-bottom: 1.1rem; border-bottom: 1px solid var(--line); margin-bottom: 1.25rem; }
+.thread-header, .thread-footer { scroll-margin-top: 1rem; }
+.thread-footer { margin-top: 1rem; }
 .thread-header h2 { margin-top: .75rem; font-size: 1.35rem; }
 .thread-header .actions { margin: 1rem 0; }
 .thread-budget { font-size: .8rem; color: var(--muted); margin: .5rem 0; }

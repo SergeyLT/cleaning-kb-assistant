@@ -201,6 +201,10 @@ def test_review_is_separate_and_invalidates_summary(memory):
     fresh = client.post(f"/conversations/{cid}/summary", headers=HEADERS).json()
     assert fresh["reviews"][0]["reviewed_at"] == reviewed["reviewed_at"]
     assert "Результат внешней проверки не записан" in fresh["verification_notice"]
+    summary_run = next(
+        run for run in get(client, cid)["runs"] if run["id"] == fresh["operation_id"]
+    )
+    assert summary_run["usage"]["prompt_version"] == "summary-v2"
     assert "reviewed_at" not in json.dumps(provider.summary_payloads[-1])
     assert len(provider.summary_payloads[-1]["turns"]) == 1
     ask(client, cid, "А духовка?")

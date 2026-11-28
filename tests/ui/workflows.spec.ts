@@ -82,20 +82,31 @@ test('Диалоги: память, черновики, переименован
 test('Проверка ответа, снимки итога и устаревание', async ({ signedPage: page }) => {
   await seedDocument(page);
   const cid = await newConversation(page);
+  await expect(page.getByRole('button', { name: 'Подвести итог', exact: true })).toBeDisabled();
+  await ask(page, 'Что входит в генеральную уборку?');
   await ask(page, 'Сколько точно будет стоить генеральная уборка?');
   await expect(page.getByText('Нужна проверка', { exact: true }).first()).toBeVisible();
+  await page.getByLabel('Вопрос по обращению').fill('Черновик не должен исчезнуть при прокрутке и итоге');
+  await page.getByRole('button', { name: '↑ К началу диалога', exact: true }).click();
+  await expect(page.locator('#thread-start h2')).toBeInViewport();
+  await page.getByRole('button', { name: '↓ К концу диалога', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Подвести итог', exact: true })).toBeInViewport();
+  await expect(page.getByLabel('Вопрос по обращению')).toBeInViewport();
+  await expect(page.getByLabel('Вопрос по обращению')).toHaveValue('Черновик не должен исчезнуть при прокрутке и итоге');
   await page.getByRole('button', { name: 'Подвести итог', exact: true }).click();
   await expect(page.getByRole('article', { name: 'Итог беседы' })).toHaveCount(1);
+  await expect(page.getByRole('article', { name: 'Итог беседы' }).locator('.message-label')).toBeInViewport();
+  await expect(page.getByLabel('Вопрос по обращению')).toHaveValue('Черновик не должен исчезнуть при прокрутке и итоге');
   await expect(page.getByRole('article', { name: 'Итог беседы' })).toContainText('ожидает проверки');
   await page.getByRole('button', { name: 'Отметить проверенным', exact: true }).click();
   await expect(page.getByText('Требовало проверки', { exact: true })).toBeVisible();
   await expect(page.getByRole('article', { name: 'Итог беседы' }).getByText('Устарел', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Подвести итог', exact: true }).click();
   await expect(page.getByRole('article', { name: 'Итог беседы' })).toHaveCount(2);
+  await expect(page.getByRole('article', { name: 'Итог беседы' }).last().locator('.message-label')).toBeInViewport();
   await expect(page.getByRole('article', { name: 'Итог беседы' }).last()).toContainText('результат не записан');
   if (process.env.UI_CAPTURE === '1') {
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: 'output/stage4-desktop.png', animations: 'disabled' });
+    await page.screenshot({ path: 'output/stage7-summary-desktop.png', animations: 'disabled' });
   }
   await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'История' }).click();
   await page.getByLabel('Требуют проверки', { exact: true }).check();
@@ -103,6 +114,33 @@ test('Проверка ответа, снимки итога и устарева
   await page.goto(`/#dialogs/${cid}`);
   await ask(page, 'Как подготовить духовку?');
   await expect(page.getByText('Устарел', { exact: true })).toHaveCount(2);
+});
+
+test('Поздний итог не переключает пользователя из другого диалога', async ({ signedPage: page }) => {
+  await seedDocument(page);
+  const first = await newConversation(page);
+  await ask(page, 'Что входит в генеральную уборку?');
+  const second = await newConversation(page);
+  await page.goto(`/#dialogs/${first}`);
+  let release: () => void;
+  await page.route(`**/conversations/${first}/summary`, async (route) => {
+    const response = await route.fetch();
+    await new Promise<void>((resolve) => { release = resolve; });
+    await route.fulfill({ response });
+  });
+  await page.getByRole('button', { name: 'Подвести итог', exact: true }).click();
+  await expect.poll(() => typeof release).toBe('function');
+  await expect(page.locator('#view')).toHaveAttribute('aria-busy', 'false');
+  await page.locator(`a[href="#dialogs/${second}"]`).click();
+  await page.getByLabel('Вопрос по обращению').fill('Черновик другого диалога');
+  const finished = page.waitForResponse((r) => r.url().endsWith(`/conversations/${first}/summary`));
+  release!();
+  await finished;
+  await expect(page).toHaveURL(new RegExp(`#dialogs/${second}$`));
+  await expect(page.getByLabel('Вопрос по обращению')).toHaveValue('Черновик другого диалога');
+  await expect(page.getByRole('article', { name: 'Итог беседы' })).toHaveCount(0);
+  await page.locator(`a[href="#dialogs/${first}"]`).click();
+  await expect(page.getByRole('article', { name: 'Итог беседы' })).toHaveCount(1);
 });
 
 test('Ошибка и лимит: ввод сохраняется, повторная отправка блокируется', async ({ signedPage: page }) => {

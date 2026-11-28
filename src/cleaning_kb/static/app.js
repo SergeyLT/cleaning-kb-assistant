@@ -122,10 +122,18 @@ async function createConversation(event) {
   catch (error) { showError(error); }
   finally { state.pending.delete("create"); if (control?.isConnected) control.disabled = false; }
 }
-async function conversationAction(cid, action, message) {
+async function conversationAction(cid, action, message, { revealResult = false } = {}) {
   if (busy(cid)) return;
   state.pending.add(cid); render();
-  try { await action(); notify(message); }
+  try {
+    const result = await action();
+    if (revealResult && route().section === "dialogs" && route().id === cid) {
+      const query = route().query;
+      query.set("run", result.operation_id);
+      window.history.replaceState(null, "", `#dialogs/${cid}?${query.toString()}`);
+    }
+    notify(message);
+  }
   catch (error) { showError(error); }
   finally { state.pending.delete(cid); if (route().id === cid || route().section === "history" || !route().id) render(); }
 }
@@ -235,11 +243,11 @@ async function dialogsView(id, query) {
   if (selected) {
     const blocked = selected.busy || busy(id);
     const budget = selected.budget;
-    thread.append(node("header", { class: "thread-header" }, node("a", { class: "button quiet thread-back", href: "#dialogs" }, "← Все диалоги"), node("h2", {}, selected.title),
-      node("div", { class: "actions" }, button("Переименовать", () => renameConversation(selected), { disabled: blocked }), button("Экспорт JSON", () => exportConversation(id)), button("Удалить", () => deleteConversation(selected), { class: "button danger", disabled: blocked }), button("Обновить", () => render())),
+    thread.append(node("header", { class: "thread-header", id: "thread-start" }, node("a", { class: "button quiet thread-back", href: "#dialogs" }, "← Все диалоги"), node("h2", {}, selected.title),
+      node("div", { class: "actions" }, button("Переименовать", () => renameConversation(selected), { disabled: blocked }), button("Экспорт JSON", () => exportConversation(id)), button("Удалить", () => deleteConversation(selected), { class: "button danger", disabled: blocked }), button("Обновить", () => render()),
+        button("↓ К концу диалога", () => $("#thread-end")?.scrollIntoView({ block: "start" }))),
       node("p", { class: "thread-budget" }, `Контекст: ${budget.used_tokens.toLocaleString("ru-RU")} / ${budget.max_tokens.toLocaleString("ru-RU")} токенов · следующий ответ требует резерва`),
-      budget.warning && budget.can_ask ? node("p", { class: "notice warning" }, "Беседа приближается к пределу. Для отдельного обращения начните новый диалог.") : null,
-      button(busy(id) ? "Выполняется…" : "Подвести итог", () => conversationAction(id, () => api(`/conversations/${id}/summary`, { method: "POST" }), "Итог сохранён в беседе."), { disabled: blocked || !selected.runs.some((r) => r.kind === "answer") })));
+      budget.warning && budget.can_ask ? node("p", { class: "notice warning" }, "Беседа приближается к пределу. Для отдельного обращения начните новый диалог.") : null));
     if (selected.runs.length) thread.append(node("div", { class: "timeline" }, selected.runs.map(runCard)));
     else {
       const intro = empty("С чего начнём?", "Задайте вопрос об услуге или условиях. Помощник найдёт ответ в документах компании.");
@@ -247,7 +255,9 @@ async function dialogsView(id, query) {
       intro.append(node("div", { class: "suggestions" }, ["Что входит в генеральную уборку?", "Как подготовить квартиру к уборке?", "Что уточнить перед уборкой после ремонта?"].map((text) => button(text, () => { state.drafts.set(id, text); const input = $("#question"); input.value = text; input.focus(); }))));
       thread.append(intro);
     }
-    thread.append(compose(selected));
+    thread.append(node("div", { class: "actions spread thread-footer", id: "thread-end" },
+      button(busy(id) ? "Выполняется…" : "Подвести итог", () => conversationAction(id, () => api(`/conversations/${id}/summary`, { method: "POST" }), "Итог сохранён в беседе.", { revealResult: true }), { disabled: blocked || !selected.runs.some((r) => r.kind === "answer") }),
+      button("↑ К началу диалога", () => $("#thread-start")?.scrollIntoView({ block: "start" }))), compose(selected));
   } else {
     thread.classList.add("card");
     thread.append(empty("Каждому обращению — свой диалог", "Продолжите сохранённую беседу или начните новую. История поможет задавать уточняющие вопросы."), button("Начать диалог", createConversation, { class: "button primary" }));

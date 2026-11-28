@@ -13,7 +13,7 @@ from cleaning_kb.database import Database, utc_now
 from cleaning_kb.errors import AppError
 from cleaning_kb.kb_service import KnowledgeService, pipeline_error
 from cleaning_kb.logging_config import log_event
-from cleaning_kb.provider import PROMPT_VERSION
+from cleaning_kb.provider import SUMMARY_PROMPT_VERSION
 from cleaning_kb.rag_models import Answer, ModelSummary, Rewrite, legacy_answer_view, safe_answer
 
 VERIFICATION_NOTICE = (
@@ -460,7 +460,7 @@ class ConversationService:
                         text,
                         json.dumps(result, ensure_ascii=False),
                         json.dumps(list(evidence.values()), ensure_ascii=False),
-                        json.dumps({"prompt_version": PROMPT_VERSION, "calls": usage}),
+                        json.dumps({"prompt_version": SUMMARY_PROMPT_VERSION, "calls": usage}),
                         operation_id,
                     ),
                 )
