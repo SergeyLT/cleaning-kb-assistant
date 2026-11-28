@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from cleaning_kb.config import Settings
 from cleaning_kb.database import Database, utc_now
 from cleaning_kb.errors import AppError
+from cleaning_kb.evidence_context import section_quote
 from cleaning_kb.logging_config import log_event, safe_frames
 from cleaning_kb.pipelines import ingestion_pipeline, retrieval_pipeline
 from cleaning_kb.provider import PROMPT_VERSION, Provider
@@ -339,16 +340,17 @@ class KnowledgeService:
         with self.database.connect() as connection:
             for snippet_id, _score in output["retrieve"]["hits"]:
                 row = connection.execute(
-                    "SELECT s.*, d.title FROM snippets s JOIN documents d "
+                    "SELECT s.*, d.title, d.text AS document_text FROM snippets s JOIN documents d "
                     "ON d.id=s.document_id WHERE s.id=? "
                     "AND d.is_active=1 AND d.indexing_status='ready'",
                     (snippet_id,),
                 ).fetchone()
                 if row is None or row["document_id"] not in active:
                     continue
-                if length + len(row["snippet_text"]) > self.settings.max_context_chars:
+                quote = section_quote(row["document_text"], row["snippet_text"])
+                if length + len(quote) > self.settings.max_context_chars:
                     break
-                length += len(row["snippet_text"])
+                length += len(quote)
                 evidence.append(
                     Evidence(
                         evidence_id=f"e{len(evidence) + 1}",
@@ -357,7 +359,7 @@ class KnowledgeService:
                             document_id=row["document_id"],
                             title=row["title"],
                             snippet_id=row["id"],
-                            quote=row["snippet_text"],
+                            quote=quote,
                         ),
                     )
                 )

@@ -2,12 +2,14 @@
 
 import json
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from conftest import API_KEY
 from fastapi.testclient import TestClient
 
 from cleaning_kb.app import create_app
+from cleaning_kb.budget import DialogBudget
 from cleaning_kb.config import Settings
 from cleaning_kb.database import Database
 from cleaning_kb.errors import AppError
@@ -16,6 +18,32 @@ from cleaning_kb.rag_models import DocumentInput, Evidence
 
 HEADERS = {"X-API-Key": API_KEY}
 TEXT = "Специализированное удаление плесени не выполняется. Духовка — отдельная опция."
+
+
+def test_preparation_tail_is_available_from_first_retrieved_fragment(rag, settings) -> None:
+    client, provider, store = rag
+    settings.retrieval_top_k = 1
+    text = Path("docs/demo-company/05-service-process.md").read_text(encoding="utf-8")
+    doc = client.post(
+        "/kb/documents", headers=HEADERS, json={"title": "Порядок обслуживания", "text": text}
+    ).json()
+    with Database(settings.database_path).connect() as connection:
+        first = connection.execute(
+            "SELECT id, snippet_text FROM snippets WHERE document_id=? ORDER BY position LIMIT 1",
+            (doc["id"],),
+        ).fetchone()
+    assert "Животных" not in first["snippet_text"]
+    store.points = {first["id"]: store.points[first["id"]]}
+    before = provider.embeddings
+    result = client.post(
+        "/kb/ask", headers=HEADERS, json={"question": "Как подготовить помещение?"}
+    ).json()
+    quote = result["sources"][0]["quote"]
+    assert quote in text and len(quote) <= 2000
+    assert all(word in quote for word in ("Ценные", "хрупкие", "ключом", "Животных", "людей"))
+    assert provider.embeddings == before + 1 and provider.generations == 1
+    budget = DialogBudget(settings, Database(settings.database_path))
+    assert budget.source_reserve() >= budget.count(result["sources"][0]) + 64
 
 
 class FakeProvider:

@@ -10,6 +10,7 @@ import tiktoken
 from cleaning_kb.config import Settings
 from cleaning_kb.database import Database
 from cleaning_kb.errors import AppError
+from cleaning_kb.evidence_context import section_quote
 
 
 def prepare_tokenizer() -> None:
@@ -34,7 +35,8 @@ class DialogBudget:
         """До платного поиска оценить максимальные top_k снимков текущих фрагментов."""
         with self.database.connect() as connection:
             rows = connection.execute(
-                "SELECT s.id, s.document_id, s.snippet_text, d.title FROM snippets s "
+                "SELECT s.id, s.document_id, s.snippet_text, d.title, d.text AS document_text "
+                "FROM snippets s "
                 "JOIN documents d ON d.id=s.document_id "
                 "WHERE d.is_active=1 AND d.indexing_status='ready'"
             ).fetchall()
@@ -44,7 +46,7 @@ class DialogBudget:
                     "document_id": row["document_id"],
                     "title": row["title"],
                     "snippet_id": row["id"],
-                    "quote": row["snippet_text"],
+                    "quote": section_quote(row["document_text"], row["snippet_text"]),
                 }
             )
             + 64
