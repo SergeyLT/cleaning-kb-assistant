@@ -1,12 +1,48 @@
 # API базы знаний
 
+## PowerShell
+
+Примеры совместимы с Windows PowerShell 5.1: тело запроса и сохранённый JSON читаются в UTF-8. Выполняйте команды из каталога проекта. Последний ответ сохраняется в `output/api-response.json`.
+
+```powershell
+$baseUrl = 'http://127.0.0.1:8001'
+$secureKey = Read-Host 'API_KEY из .env' -AsSecureString
+$apiKey = [Net.NetworkCredential]::new('', $secureKey).Password
+$headers = @{ 'X-API-Key' = $apiKey }
+New-Item -ItemType Directory -Force -Path output | Out-Null
+
+function Invoke-KbApi {
+    param(
+        [string]$Path,
+        [string]$Method = 'Get',
+        [object]$Body
+    )
+    $parameters = @{
+        Uri = "$baseUrl$Path"
+        Method = $Method
+        Headers = $headers
+        UseBasicParsing = $true
+        OutFile = 'output/api-response.json'
+    }
+    if ($PSBoundParameters.ContainsKey('Body')) {
+        $json = $Body | ConvertTo-Json -Depth 12
+        $parameters.ContentType = 'application/json; charset=utf-8'
+        $parameters.Body = [Text.Encoding]::UTF8.GetBytes($json)
+    }
+    Invoke-WebRequest @parameters | Out-Null
+    Get-Content -Encoding utf8 output/api-response.json -Raw | ConvertFrom-Json
+}
+```
+
+Для HTTPS-установки замените `$baseUrl` её публичным адресом. По завершении работы очистите переменные с ключом командой `Remove-Variable apiKey, secureKey, headers`.
+
 ## Панель и просмотр обработки
 
 `GET /` показывает форму входа либо панель для действующей cookie-сессии. `GET /login` открывает вход, а при действующей сессии возвращает в панель. HTML использует локальные CSS/JavaScript; секрет API не нужен в браузере. Мутации панели используют тот же JSON API с cookie и CSRF.
 
 `GET /qa/{operation_id}` открывает сохранённую операцию, в том числе без диалога. Возвращает данные в том же формате, что элемент `/history`: результат, источники, состояние, отметку и актуальность итога. Неизвестный id — HTTP 404.
 
-`GET /audit?limit=100&offset=0` — защищённый журнал действий; необязательный `conversation_id` ограничивает его одной беседой. `limit` допускает 1–100, `offset` — неотрицательный. Возвращаются только id, время, request_id, conversation_id, action, status, безопасный error и duration_ms. Входы/выходы операций, пароли, cookies и ключи не возвращаются.
+`GET /audit?limit=100&offset=0` — защищённый журнал действий; необязательный `conversation_id` ограничивает его одной беседой. `limit` допускает 1–100, `offset` — неотрицательный. Запись содержит идентификаторы, время, действие, статус, безопасный код ошибки и длительность; для изменений лимитов/сброса также доступны `actor_type`, `actor_id` и `details` с параметрами операции. Пароли, cookies и ключи в журнал не включаются.
 
 Все операции `/kb/*` и `/ai/*` требуют `X-API-Key` либо cookie-сессии. Изменения с cookie дополнительно требуют `X-CSRF-Token`. Полная OpenAPI-схема доступна по защищённому `/openapi.json`.
 
@@ -24,6 +60,8 @@
 
 `GET /kb/documents?limit=100&offset=0` — список без текстов. `GET /kb/documents/{id}` — полный документ. `POST /kb/documents/{id}/reindex` — повтор индексации, в том числе восстановление индекса из кеша. `POST /kb/documents/{id}/deactivate` — исключение из будущего поиска без удаления сохранённых ответов. Для исправления условий добавьте новую редакцию как новый документ, затем исключите прежнюю.
 
+`PATCH /kb/documents/{id}` принимает `{"title":"Новое название"}` и меняет название документа. Источники истории содержат название снимка `title` и актуальное `current_title`; интерфейс использует актуальное название. Пустое название отклоняется, совпадение названия и текста с другим документом возвращает HTTP 409.
+
 Пример Linux после настройки переменной `APP_KEY`:
 
 ```bash
@@ -33,12 +71,11 @@ curl -fsS http://127.0.0.1:8001/kb/documents \
 curl -fsS http://127.0.0.1:8001/kb/documents -H "X-API-Key: $APP_KEY"
 ```
 
-PowerShell, переменная `apiKey` содержит ключ приложения:
+PowerShell с функцией `Invoke-KbApi`, определённой выше:
 
 ```powershell
-$body = @{ title = 'Дополнительные опции'; text = 'Духовка — отдельная опция. Перед уборкой её нужно выключить, остудить и освободить.' } | ConvertTo-Json
-Invoke-RestMethod http://127.0.0.1:8001/kb/documents -Method Post -Headers @{ 'X-API-Key' = $apiKey } -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
-Invoke-RestMethod http://127.0.0.1:8001/kb/documents -Headers @{ 'X-API-Key' = $apiKey }
+Invoke-KbApi '/kb/documents' -Method Post -Body @{ title = 'Подготовка духовки'; text = 'Духовка изнутри заказывается отдельно. Перед чисткой её нужно выключить, остудить и освободить от продуктов и посуды.' }
+Invoke-KbApi '/kb/documents'
 ```
 
 ## Ответы
@@ -53,7 +90,11 @@ Invoke-RestMethod http://127.0.0.1:8001/kb/documents -Headers @{ 'X-API-Key' = $
 
 Публичный `confidence` — строка `high`, `medium` или `low` для обоих endpoint ответов. Внутри модель оценивает достаточность числом 0–1: ниже `CONFIDENCE_THRESHOLD` получается `low` и обязательный review; при значении не ниже `max(0.9, CONFIDENCE_THRESHOLD)` — `high`, между границами — `medium`. По умолчанию границы 0.7 и 0.9. При отсутствии проверенных источников безопасный ответ всегда имеет `low` и `needs_review=true`. Даже `high` не отменяет review при конфликте, частичном покрытии, запросе цены или оперативного подтверждения. Это оценка достаточности, не вероятность истинности.
 
-Числовой `confidence_score` не входит в JSON ответа на вопрос. Вместе с использованным порогом он сохраняется в диагностических метаданных `usage` операции, доступных через защищённую историю. Сам контракт генерации провайдера остаётся числовым, внешний JSON соответствует категориальному формату задания.
+Числовой `confidence_score` и использованный порог доступны в диагностических метаданных `usage` операции через защищённую историю. Основной ответ API содержит категориальную оценку.
+
+```powershell
+Invoke-KbApi '/kb/ask' -Method Post -Body @{ question = 'Входит ли духовка в генеральную уборку и как её подготовить?' }
+```
 
 `POST /ai/answer_with_sources` использует только переданный контекст и не добавляет его в базу:
 
@@ -70,8 +111,7 @@ curl -fsS http://127.0.0.1:8001/ai/answer_with_sources \
 ```
 
 ```powershell
-$body = @{ question = 'Как подготовить духовку?'; context = 'Перед уборкой духовку нужно выключить, остудить и освободить.' } | ConvertTo-Json
-Invoke-RestMethod http://127.0.0.1:8001/ai/answer_with_sources -Method Post -Headers @{ 'X-API-Key' = $apiKey } -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+Invoke-KbApi '/ai/answer_with_sources' -Method Post -Body @{ question = 'Как подготовить духовку?'; context = 'Перед чисткой духовку нужно выключить, остудить и освободить от продуктов и посуды.' }
 ```
 
 Причины уточнения: `no_evidence`, `no_answer`, `partial_coverage`, `conflicting_sources`, `low_confidence`, `no_verified_sources`, `invalid_model_output`, `sources_changed`, `price_requires_confirmation`, `operational_confirmation_required`. Последние две — дополнительные серверные правила для распознанных запросов конкретной цены и подтверждения выезда/назначения сотрудника. Они учитывают исходный вопрос и поисковую формулировку, не зависят от самооценки модели и не применяются к отдельному endpoint с произвольным контекстом. Это ограниченные языковые правила, не универсальный классификатор намерений. При недействительных ссылках/формате разрешена одна дополнительная генерация; затем возвращается безопасный ответ без неподтверждённого текста. Прямой запрет услуги в документах допускает полный отрицательный ответ без review.
@@ -92,19 +132,16 @@ Invoke-RestMethod http://127.0.0.1:8001/ai/answer_with_sources -Method Post -Hea
 
 `GET /conversations/{id}` возвращает название, ревизию, упорядоченные `runs`, `busy` и `budget`. В каждой операции доступны вопрос, поисковая формулировка, состояние, результат, источники, исходный `needs_review`, `reviewed_at`, модель и usage. `kind` отличает answer/summary, `state` — running/completed/failed/interrupted. У итогов `is_stale` вычисляется по текущей ревизии. История не содержит секретов конфигурации.
 
-`PATCH /conversations/{id}` принимает только `{"title":"Новое название"}`. `DELETE /conversations/{id}?confirm=true` удаляет диалог и связанные тексты; без подтверждения возвращается HTTP 409. Во время активной операции изменения и второй запрос в тот же диалог отклоняются с `conversation_busy`. Подтверждение удаления в интерфейсе добавляется вместе с веб-панелью.
+`PATCH /conversations/{id}` принимает только `{"title":"Новое название"}`. `DELETE /conversations/{id}?confirm=true` удаляет диалог и связанные тексты; без подтверждения возвращается HTTP 409. Во время активной операции изменения и второй запрос в тот же диалог отклоняются с `conversation_busy`. В панели удаление требует подтверждения.
 
 Пример PowerShell после загрузки демодокументов:
 
 ```powershell
-$headers = @{ 'X-API-Key' = $apiKey }
-$conversation = Invoke-RestMethod http://127.0.0.1:8001/conversations -Method Post -Headers $headers -ContentType 'application/json' -Body '{}'
-$body = @{ question = 'Что входит в генеральную уборку квартиры?'; conversation_id = $conversation.id } | ConvertTo-Json
-Invoke-RestMethod http://127.0.0.1:8001/kb/ask -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
-$body = @{ question = 'А духовка туда входит?'; conversation_id = $conversation.id } | ConvertTo-Json
-Invoke-RestMethod http://127.0.0.1:8001/kb/ask -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
-Invoke-RestMethod "http://127.0.0.1:8001/conversations/$($conversation.id)/summary" -Method Post -Headers $headers
-Invoke-RestMethod "http://127.0.0.1:8001/conversations/$($conversation.id)/export" -Headers $headers
+$conversation = Invoke-KbApi '/conversations' -Method Post -Body @{}
+Invoke-KbApi '/kb/ask' -Method Post -Body @{ question = 'Что входит в генеральную уборку квартиры?'; conversation_id = $conversation.id }
+Invoke-KbApi '/kb/ask' -Method Post -Body @{ question = 'А духовка туда входит?'; conversation_id = $conversation.id }
+Invoke-KbApi "/conversations/$($conversation.id)/summary" -Method Post
+Invoke-KbApi "/conversations/$($conversation.id)/export"
 ```
 
 Эквивалент Linux: сохраняйте id из `POST /conversations` и передавайте его в JSON запроса. Команды не требуют jq:
@@ -133,6 +170,22 @@ curl -fsS "http://127.0.0.1:8001/conversations/$CONVERSATION_ID/summary" -X POST
 
 Модель получает все обычные вопросы/ответы и их источники, без предыдущих итогов и без отметок сотрудника. Идентификаторы сообщений и источников проверяются; статусы и даты добавляет сервер. Допускается одна попытка исправления формата/ссылок. Некорректный итог сохраняется как failed с безопасным кодом, без неподтверждённого текста. Перед сохранением проверяется ревизия беседы. Смена ревизии во время обработки возвращает HTTP 409/`summary_revision_changed`.
 
-Новый вопрос и отметка проверки делают прежние итоги устаревшими. Новый итог не заменяет старую запись. Просмотр, отметки и итог доступны после достижения предела беседы; итог имеет отдельный выходной бюджет. `GET /history` показывает обычные операции и итоги с пагинацией. `GET /conversations/{id}/export` выдаёт JSON со снимком всей беседы и всеми итогами (`schema_version=2`, `exported_at`). Версия 2 обозначает категориальный confidence; ранее выгруженные файлы версии 1 не переписываются.
+Новый вопрос и отметка проверки делают прежние итоги устаревшими. Все сохранённые итоги доступны в истории. Просмотр, отметки и итог доступны после достижения предела беседы; итог имеет отдельный выходной бюджет. `GET /history` показывает обычные операции и итоги с пагинацией. `GET /conversations/{id}/export` выдаёт JSON со всей беседой и итогами: `schema_version=2`, `exported_at`, категориальный `confidence`, снимки источников и отметки проверки. `display_text` содержит представление итога с актуальными названиями документов; `answer` и `result.text` — текст сохранённого снимка.
 
-Старые числовые ответы в SQLite не изменяются. При чтении истории, карточки, диалога или экспорта они отображаются категориями: записанная причина `low_confidence` или отсутствие источников дают `low`, иначе score ≥0.9 даёт `high`, остальные — `medium`. Старый порог не сохранялся, поэтому текущая настройка не используется для пересчёта прежнего решения. Исходные review-причины и отметки остаются неизменными.
+## Ручная проверка
+
+После загрузки демонстрационных документов запросите точную цену:
+
+```powershell
+$result = Invoke-KbApi '/kb/ask' -Method Post -Body @{ question = 'Сколько точно будет стоить генеральная уборка моего помещения?' }
+$result | ConvertTo-Json -Depth 12
+Invoke-KbApi "/qa/$($result.operation_id)"
+```
+
+Ожидается `needs_review=true` и причина `price_requires_confirmation`, без обещания конкретной суммы. Ответ доступен в истории и очереди проверки. Другие причины могут присутствовать одновременно.
+
+## Расход и лимиты
+
+`GET /settings/provider` возвращает `limits`, `usage`, `remaining`, начало/конец суточного периода, `last_reset` и `actual_usage_today`. Резерв бюджета и фактическая статистика токенов провайдера показываются раздельно.
+
+`PUT /settings/provider` принимает три целых поля: `calls_per_minute`, `calls_per_day`, `token_budget_per_day`. Настройки сохраняются в SQLite. `POST /settings/provider/reset` с `{"confirm":true}` начинает новый суточный отсчёт и записывает автора/время/прежние значения в аудит; минутное окно и история сохраняются. При текущих операциях возвращается HTTP 409. Диапазоны полей и правила приоритета — в [справочнике конфигурации](configuration.md).

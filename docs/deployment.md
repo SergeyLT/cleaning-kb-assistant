@@ -12,9 +12,18 @@
 
 ## 1. Подготовить GitHub и первый образ
 
+На рабочем компьютере получите исходники:
+
+```bash
+git clone https://github.com/SergeyLT/cleaning-kb-assistant.git
+cd cleaning-kb-assistant
+```
+
+Для собственного fork используйте его URL. На VPS исходники вручную собирать не требуется: сервер получает готовый образ из GHCR.
+
 Опубликуйте репозиторий самостоятельно, включите Actions, выберите `main` основной веткой. [Workflow](../.github/workflows/ci.yml) использует Ubuntu 24.04, Python 3.12, Node 24 и закреплённые commit SHA actions.
 
-- PR: Python-проверки, pytest, шесть UI-сценариев и Docker build без публикации/deploy. Ключ модели не нужен.
+- PR: Python-проверки, pytest, UI-сценарии и Docker build без публикации/deploy. Ключ модели не нужен.
 - Push в main: те же Python/UI-проверки, затем одна сборка и публикация `latest` и `sha-<полный SHA>` в `ghcr.io/<owner>/<repository>` (нижний регистр).
 - Ручной `workflow_dispatch`: только проверки/проверочная сборка, без публикации и deploy.
 - Production deploy выключен, пока Repository Variable `PRODUCTION_DEPLOY_ENABLED` не равна строке `true`.
@@ -44,7 +53,7 @@
 | `PROXYAPI_KEY` | Ключ провайдера для индексации и ответов |
 | `OBSERVABILITY_PROJECT` | По умолчанию `cleaning-kb`; уникальное стабильное имя при нескольких установках |
 
-Лимиты/модели наследуют значения [README](../README.md#конфигурация). `APP_ENVIRONMENT=production`, путь SQLite и внутренний Qdrant уже заданы в Compose. Локальные `HOST_PORT`, `DATABASE_PATH`, `QDRANT_URL` и локальный `APP_VERSION` из init-env переносить не нужно.
+Лимиты и модели используют значения [конфигурации](../README.md#конфигурация-и-данные). `APP_ENVIRONMENT=production`, путь SQLite и внутренний Qdrant уже заданы в Compose. Локальные `HOST_PORT`, `DATABASE_PATH`, `QDRANT_URL` и локальный `APP_VERSION` из init-env не используются в production-настройке.
 
 Чтобы получить хеш и ключ без паролей в аргументах, локально выполните команды `init-env` из README. Для отдельного production-набора укажите `init-env --env-file .tmp/production.env` (каталог `.tmp` создайте заранее). Файл не коммитьте; перенесите нужные значения через защищённый UI Coolify. У хеша вида `pbkdf2_sha256$...` сохраните все `$`: при копировании значения из файла удалите только окружающие одинарные кавычки. Для текстового dotenv-импорта сохраните одинарные кавычки. Не делайте повторное shell-раскрытие значения и проверьте успешный вход после запуска.
 
