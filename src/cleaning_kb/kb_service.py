@@ -199,6 +199,51 @@ class KnowledgeService:
                 return self.reindex(document_id, request_id)
             return document
 
+    def rename(self, document_id: str, title: str, request_id: str) -> dict[str, Any]:
+        """Менять только метаданные; снимки ответов и векторы остаются прежними."""
+        with self.document_lock:
+            if not self.operation_slots.acquire(blocking=False):
+                raise AppError(
+                    409, "operation_busy", "Дождитесь завершения текущей операции", "business_rule"
+                )
+            try:
+                with self.database.connect() as connection:
+                    connection.execute("BEGIN IMMEDIATE")
+                    document = connection.execute(
+                        "SELECT * FROM documents WHERE id=?", (document_id,)
+                    ).fetchone()
+                    if document is None:
+                        raise AppError(
+                            404, "document_not_found", "Документ не найден", "business_rule"
+                        )
+                    digest = hashlib.sha256(
+                        (title + "\x00" + document["text"]).encode()
+                    ).hexdigest()
+                    if connection.execute(
+                        "SELECT 1 FROM documents WHERE content_hash=? AND id!=?",
+                        (digest, document_id),
+                    ).fetchone():
+                        raise AppError(
+                            409,
+                            "document_duplicate",
+                            "Документ с таким названием и текстом уже существует",
+                            "business_rule",
+                        )
+                    if title != document["title"]:
+                        connection.execute(
+                            "UPDATE documents SET title=?, content_hash=? WHERE id=?",
+                            (title, digest, document_id),
+                        )
+                        self.database.audit(
+                            "document_renamed",
+                            request_id,
+                            connection=connection,
+                            details={"document_id": document_id},
+                        )
+                return self.document(document_id)
+            finally:
+                self.operation_slots.release()
+
     def reindex(self, document_id: str, request_id: str) -> dict[str, Any]:
         """Повтор записи сохраняет UUID; готовность ставится после обоих хранилищ."""
         with self.document_lock:

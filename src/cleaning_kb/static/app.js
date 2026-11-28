@@ -105,11 +105,11 @@ function modal(title, fields, submitText, action, { danger = false, hint = "" } 
   node("div", { class: "actions" }, cancel, submit));
   $("#dialog-content").replaceChildren(form);
   dialog.oncancel = (event) => { if (working) event.preventDefault(); };
-  dialog.onclose = () => { if (previous?.isConnected) previous.focus(); };
+  dialog.onclose = () => { if (previous?.isConnected) previous.focus(); else $("#main").focus({ preventScroll: true }); };
   dialog.showModal();
 }
-function field(label, name, { multiline = false, value = "", maxLength = 200 } = {}) {
-  const input = node(multiline ? "textarea" : "input", { id: `field-${name}`, name, maxlength: maxLength, required: true });
+function field(label, name, { multiline = false, value = "", maxLength = 200, ...attrs } = {}) {
+  const input = node(multiline ? "textarea" : "input", { id: `field-${name}`, name, maxlength: maxLength, required: true, ...attrs });
   input.value = value;
   return [node("label", { for: `field-${name}` }, label), input];
 }
@@ -170,7 +170,7 @@ function sourcesView(sources = []) {
   if (!sources.length) return null;
   const unique = [...new Map(sources.map((s) => [JSON.stringify(s), s])).values()];
   return node("details", { class: "sources" }, node("summary", {}, `Источники (${unique.length})`), unique.map((source) => node("article", { class: "source" },
-    node("h3", {}, source.title), node("blockquote", {}, source.quote), source.document_id ? node("a", {
+    node("h3", {}, source.current_title || source.title), node("blockquote", {}, source.quote), source.document_id ? node("a", {
       href: `#documents/${encodeURIComponent(source.document_id)}`, class: "button", onclick: () => { state.documentReturn = location.hash; },
     }, "Открыть документ") : node("p", { class: "small muted" }, "Контекст запроса, не документ компании"))));
 }
@@ -189,12 +189,12 @@ function runCard(run) {
     node("p", { class: "record-meta" }, date(run.created_at)),
     failed ? node("div", { class: "notice error" }, reason(run.error)) : null,
     isSummary && run.is_stale ? node("p", { class: "notice warning" }, "После этого итога беседа или отметки изменились. Создайте новый итог для актуального снимка.") : null,
-    prose(run.answer || (working ? "Результат появится после завершения обработки. Обновите диалог через некоторое время." : "Ответ не был получен.")),
+    prose(run.display_text || run.answer || (working ? "Результат появится после завершения обработки. Обновите диалог через некоторое время." : "Ответ не был получен.")),
     !isSummary && run.needs_review ? node("ul", { class: "reason-list" }, (result.review_reasons || [run.error]).filter(Boolean).map((code) => node("li", {}, reason(code)))) : null,
     run.reviewed_at ? node("p", { class: "small" }, pill("Проверка отмечена"), ` ${date(run.reviewed_at)}. Результат уточнения не записан.`) : null,
     sourcesView(sources),
     node("div", { class: "actions" },
-      run.answer && !failed && !working ? button("Копировать", () => copyText(isSummary ? (result.text || run.answer) : run.answer)) : null,
+      run.answer && !failed && !working ? button("Копировать", () => copyText(isSummary ? (run.display_text || result.text || run.answer) : run.answer)) : null,
       !isSummary && run.needs_review && !run.reviewed_at && !working ? button("Отметить проверенным", () => conversationAction(run.conversation_id || run.id,
         () => api(`/qa/${run.id}/review`, { method: "POST" }), "Факт проверки отмечен. Исходная причина сохранена."), { disabled }) : null),
     node("details", {}, node("summary", {}, "Сведения об обработке"),
@@ -280,7 +280,10 @@ async function documentsView(id, query) {
     return node("div", {}, node("a", { class: "button quiet", href: state.documentReturn }, "← Назад"),
       heading(doc.title, "Документ базы знаний"), node("article", { class: "card" }, node("div", { class: "document-meta" }, pill(indexingLabel(doc), doc.indexing_status === "failed" ? "error" : !doc.is_active ? "neutral" : ""), node("span", { class: "record-meta" }, `Добавлен ${date(doc.created_at)}`)),
       doc.error ? node("p", { class: "notice error" }, reason(doc.error)) : null,
-      node("div", { class: "actions" }, doc.is_active ? button(blocked ? "Выполняется…" : "Повторить индексацию", () => conversationAction(id, () => api(`/kb/documents/${id}/reindex`, { method: "POST" }), "Состояние обработки обновлено."), { disabled: blocked }) : null,
+      node("div", { class: "actions" }, button("Переименовать", () => modal("Переименовать документ", field("Название документа", "title", { value: doc.title, maxlength: "200" }), "Сохранить", async (form) => {
+        await api(`/kb/documents/${id}`, { method: "PATCH", body: { title: new FormData(form).get("title") } });
+        notify("Название документа сохранено. Повторная индексация не требуется."); render();
+      }), { disabled: blocked }), doc.is_active ? button(blocked ? "Выполняется…" : "Повторить индексацию", () => conversationAction(id, () => api(`/kb/documents/${id}/reindex`, { method: "POST" }), "Состояние обработки обновлено."), { disabled: blocked }) : null,
         doc.is_active ? button("Исключить из поиска", () => modal("Исключить документ?", node("p", {}, "Он перестанет участвовать в новых ответах. Цитаты в прошлых ответах сохранятся."), "Исключить", async () => { await api(`/kb/documents/${id}/deactivate`, { method: "POST" }); notify("Документ исключён из поиска."); render(); }), { disabled: blocked }) : null),
       node("div", { class: "prose document-text" }, doc.text)));
   }
@@ -290,6 +293,50 @@ async function documentsView(id, query) {
     node("div", { class: "record-list" }, docs.length ? docs.map((doc) => node("article", { class: "card" }, pill(indexingLabel(doc), doc.indexing_status === "failed" ? "error" : !doc.is_active ? "neutral" : ""), node("h2", {}, doc.title), node("p", { class: "record-meta" }, date(doc.created_at)), node("a", { class: "button", href: `#documents/${doc.id}`, onclick: () => { state.documentReturn = `#documents?offset=${offset}`; } }, "Открыть"))) : node("div", { class: "card" }, empty("База знаний пока пуста", "Добавьте первый документ с описанием услуги или условий работы."))), pagination("documents", docs.length, offset));
 }
 const actions = { auth_login: "Вход в панель", auth_logout: "Выход из панели", document_added: "Документ добавлен", document_indexed: "Индексация документа", document_deactivated: "Документ исключён", kb_answer: "Обработка вопроса", answer_with_context: "Ответ по переданному контексту", conversation_created: "Диалог создан", conversation_renamed: "Диалог переименован", conversation_deleted: "Диалог удалён", conversation_operation_started: "Обработка начата", conversation_summarized: "Подведение итога", answer_reviewed: "Проверка отмечена" };
+Object.assign(actions, { document_renamed: "Документ переименован", provider_limits_updated: "Лимиты провайдера изменены", provider_budget_reset: "Суточные счётчики сброшены" });
+
+async function settingsView() {
+  const data = await api("/settings/provider");
+  const labels = { calls_per_minute: "Вызовы за 60 секунд", calls_per_day: "Вызовы за сутки", token_budget_per_day: "Суточный резерв токенов" };
+  const ranges = { calls_per_minute: [1, 100], calls_per_day: [1, 10000], token_budget_per_day: [1000, 100000000] };
+  const number = (value) => Number(value).toLocaleString("ru-RU");
+  const blocked = busy("settings");
+  const metrics = node("div", { class: "settings-grid" }, Object.keys(labels).map((key) => node("article", { class: "card", "aria-label": labels[key] },
+    node("h2", {}, labels[key]), node("p", {}, `${number(data.usage[key])} / ${number(data.limits[key])}`),
+    node("p", { class: "small muted" }, `Осталось: ${number(data.remaining[key])}`))));
+  const form = node("form", { class: "card", onsubmit: async (event) => {
+    event.preventDefault();
+    if (busy("settings")) return;
+    const values = Object.fromEntries(Object.keys(labels).map((key) => [key, Number(new FormData(form).get(key))]));
+    state.pending.add("settings");
+    let saved = false;
+    form.querySelectorAll("input, button").forEach((control) => { control.disabled = true; });
+    try { await api("/settings/provider", { method: "PUT", body: values }); saved = true; notify("Лимиты сохранены и применены без перезапуска."); }
+    catch (error) { showError(error); }
+    finally {
+      state.pending.delete("settings");
+      if (route().section === "settings" && saved) render();
+      else form.querySelectorAll("input, button").forEach((control) => { control.disabled = false; });
+    }
+  } }, node("h2", {}, "Настройки лимитов"),
+  node("div", { class: "settings-grid" }, Object.keys(labels).map((key) => node("div", { class: "settings-field" }, field(labels[key], key, {
+    type: "number", value: data.limits[key], min: ranges[key][0], max: ranges[key][1], step: "1", disabled: blocked,
+  })))), node("p", { class: "small muted" }, "Сохранённые значения действуют со следующего вызова и сохраняются после перезапуска. Если снизить лимит ниже расхода, новые вызовы будут заблокированы."),
+  button("Сохранить", () => form.requestSubmit(), { class: "button primary", disabled: blocked }));
+  const actual = data.actual_usage_today;
+  return node("div", {}, heading("Расход и лимиты", "Общий учёт вызовов модели и эмбеддингов.", button("Обновить", render)), metrics,
+    node("p", { class: "notice" }, "Резерв — консервативная оценка для ограничения запросов, а не стоимость и не фактически оплаченные токены. Следующий вызов должен целиком помещаться в оставшийся резерв."),
+    node("p", { class: "small muted" }, `По данным провайдера за сегодня UTC: ${number(actual.total_tokens)} токенов. Статистика токенов получена для ${actual.reported_calls} из ${actual.all_calls} вызовов. Эти данные не обнуляются при сбросе счётчиков.`),
+    form, node("section", { class: "card settings-reset" }, node("h2", {}, "Суточный учёт"),
+      node("p", {}, `Начало текущего отсчёта: ${date(data.period_started_at)}. Следующий суточный период: ${date(data.next_day_at)} (00:00 UTC).`),
+      node("p", { class: "small", "data-last-reset": "" }, data.last_reset ? `Последний сброс: ${date(data.last_reset.at)}. Выполнил: ${data.last_reset.actor_type === "api_key" ? "Сервисный API" : data.last_reset.actor_id}.` : "Сбросов ещё не было."),
+      node("p", { class: "small muted" }, "Сброс начинает новый отсчёт суточных вызовов и резерва до ближайших 00:00 UTC. История, фактический usage и минутное ограничение сохраняются. При текущих операциях сброс недоступен."),
+      button("Сбросить суточные счётчики", () => modal("Сбросить суточные счётчики?", node("p", {}, "Использованный суточный лимит станет доступен снова. История вызовов и минутное ограничение сохранятся. Это не меняет баланс у провайдера."), "Сбросить счётчики", async () => {
+        await api("/settings/provider/reset", { method: "POST", body: { confirm: true } });
+        notify("Начат новый суточный отсчёт. История сохранена."); if (route().section === "settings") render();
+      }), { disabled: blocked }), node("a", { class: "button quiet", href: "#history?audit=1" }, "История изменений")));
+}
+
 async function historyView(query) {
   const pending = query.get("pending") === "1";
   const audit = query.get("audit") === "1";
@@ -306,6 +353,9 @@ async function historyView(query) {
   }
   content.append(node("div", { class: "record-list" }, records.length ? records.map((item) => audit ? node("article", { class: "card audit-record" }, node("strong", {}, actions[item.action] || "Действие приложения"), node("p", { class: "record-meta" }, `${date(item.created_at)} · ${item.duration_ms} мс`), pill(item.status === "ok" ? "Записано" : "Ошибка", item.status === "ok" ? "neutral" : "error"),
     item.error ? node("p", { class: "small" }, reason(item.error)) : null,
+    item.actor_id ? node("p", { class: "small" }, `Выполнил: ${item.actor_type === "api_key" ? "Сервисный API" : item.actor_id}`) : null,
+    item.details?.previous_usage ? node("p", { class: "small" }, `До сброса: ${item.details.previous_usage.calls_per_day} вызовов, резерв ${item.details.previous_usage.token_budget_per_day} токенов.`) : null,
+    item.details?.limits ? node("p", { class: "small" }, `Лимиты: ${item.details.limits.calls_per_minute} за минуту, ${item.details.limits.calls_per_day} за сутки, резерв ${item.details.limits.token_budget_per_day} токенов.`) : null,
     node("details", {}, node("summary", {}, "Технические сведения"), node("p", { class: "small muted" }, `Запрос: ${item.request_id || "—"}`)),
     item.conversation_id ? node("a", { href: `#dialogs/${item.conversation_id}`, class: "button" }, "Открыть диалог") : null) :
     node("article", { class: "card" }, node("div", { class: "record-heading" }, node("h2", {}, item.kind === "summary" ? "Итог беседы" : item.question), pill(item.reviewed_at ? "Проверка отмечена" : item.needs_review ? "Нужна проверка" : item.state === "running" ? "Выполняется…" : "Сохранено", item.needs_review && !item.reviewed_at ? "warning" : "neutral")), node("p", { class: "record-meta" }, date(item.created_at)),
@@ -321,7 +371,7 @@ async function render() {
   view.inert = true;
   document.querySelectorAll("[data-nav]").forEach((link) => link.setAttribute("aria-current", link.dataset.nav === current.section ? "page" : "false"));
   try {
-    const result = current.section === "documents" ? await documentsView(current.id, current.query) : current.section === "history" ? await historyView(current.query) : await dialogsView(current.id, current.query);
+    const result = current.section === "documents" ? await documentsView(current.id, current.query) : current.section === "history" ? await historyView(current.query) : current.section === "settings" ? await settingsView() : await dialogsView(current.id, current.query);
     if (version !== state.sequence) return;
     view.replaceChildren(result); view.setAttribute("aria-busy", "false"); view.inert = false;
     const anchor = current.query.get("run");

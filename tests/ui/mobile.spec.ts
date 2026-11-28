@@ -33,4 +33,15 @@ test('Телефон: список, беседа, источник и основ
   await expect(page.getByRole('dialog').getByRole('button', { name: 'Отмена' })).toBeVisible();
   await page.keyboard.press('Escape');
   await noOverflow(page);
+  await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Лимиты', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Расход и лимиты', exact: true })).toBeVisible();
+  await expect(page.getByRole('spinbutton', { name: 'Суточный резерв токенов', exact: true })).toBeEditable();
+  await page.getByRole('button', { name: 'Сбросить суточные счётчики', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeInViewport();
+  await page.getByRole('dialog').getByRole('button', { name: 'Отмена', exact: true }).click();
+  await noOverflow(page);
+  if (process.env.UI_CAPTURE === 'settings') {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: 'output/stage7-settings-mobile.png', fullPage: true, animations: 'disabled' });
+  }
 });

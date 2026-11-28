@@ -54,7 +54,7 @@ def test_budget_reservation_is_atomic_and_survives_restart(settings) -> None:
         assert sorted(results) == ["ok", "provider_budget_exceeded"]
         assert len(calls) == 1
         restarted = ProxyProvider(settings, Database(settings.database_path), client)
-        with pytest.raises(AppError, match="Достигнут лимит"):
+        with pytest.raises(AppError, match="суточный лимит"):
             restarted.embed(["Вопрос"], "operation2")
     with database.connect() as connection:
         row = connection.execute("SELECT * FROM provider_calls").fetchone()

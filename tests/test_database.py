@@ -10,6 +10,32 @@ from cleaning_kb.database import Database, MigrationError
 from cleaning_kb.locking import InstanceLock
 
 
+def test_settings_migration_preserves_previous_sessions_and_provider_history(tmp_path, monkeypatch):
+    original = database_module.files
+    directory = tmp_path / "migrations"
+    directory.mkdir()
+    for name in ["001_initial.sql", "002_provider_calls.sql", "003_conversations.sql"]:
+        source = original("cleaning_kb").joinpath("migrations/" + name)
+        (directory / name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(database_module, "files", lambda _: tmp_path)
+    database = Database(tmp_path / "old.sqlite3")
+    database.initialize()
+    with database.connect() as connection:
+        connection.execute("INSERT INTO auth_sessions VALUES ('session', 'csrf', 1, 9999999999)")
+        connection.execute(
+            "INSERT INTO provider_calls VALUES ('call','2026-11-28','op',"
+            "'generation','model',900,'completed','{}',NULL)"
+        )
+    monkeypatch.setattr(database_module, "files", original)
+    database.initialize()
+    with database.connect() as connection:
+        assert connection.execute("SELECT actor_id FROM auth_sessions").fetchone()[0] is None
+        assert connection.execute("SELECT reserved_tokens FROM provider_calls").fetchone()[0] == 900
+        assert (
+            connection.execute("SELECT calls_per_day FROM provider_settings").fetchone()[0] is None
+        )
+
+
 def test_migrations_preserve_data_and_foreign_keys(tmp_path: Path) -> None:
     database = Database(tmp_path / "app.sqlite3")
     database.initialize()
@@ -25,7 +51,7 @@ def test_migrations_preserve_data_and_foreign_keys(tmp_path: Path) -> None:
             connection.execute("SELECT text FROM documents").fetchone()[0]
             == "Демонстрационный текст"
         )
-        assert connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 3
+        assert connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 4
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
                 "INSERT INTO snippets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

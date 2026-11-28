@@ -16,6 +16,67 @@ from cleaning_kb.errors import AppError
 HEADERS = {"X-API-Key": API_KEY}
 
 
+def test_document_rename_updates_source_views_without_reindexing_or_rewriting(memory, settings):
+    client, provider = memory
+    document = client.get("/kb/documents", headers=HEADERS).json()[0]
+    cid = create(client)
+    answer = ask(client, cid, "Входит ли духовка?")
+    summary = client.post(f"/conversations/{cid}/summary", headers=HEADERS).json()
+    database = Database(settings.database_path)
+    with database.connect() as connection:
+        snapshots = list(
+            connection.execute("SELECT id, result_json FROM qa_runs ORDER BY position")
+        )
+        vectors = list(connection.execute("SELECT id, embedding_json FROM snippets"))
+    embeddings = provider.embeddings
+    renamed = client.patch(
+        "/kb/documents/" + document["id"], headers=HEADERS, json={"title": "Исправленное название"}
+    )
+    assert renamed.status_code == 200
+    assert provider.embeddings == embeddings
+    old_answer = client.get("/qa/" + answer["operation_id"], headers=HEADERS).json()
+    assert old_answer["sources"][0]["title"] == "Правила"
+    assert old_answer["sources"][0]["current_title"] == "Исправленное название"
+    view = get(client, cid)
+    old_summary = next(r for r in view["runs"] if r["id"] == summary["operation_id"])
+    assert "[Исправленное название]" in old_summary["display_text"]
+    assert "[Правила]" in old_summary["answer"]
+    assert old_summary["is_stale"] is False
+    with database.connect() as connection:
+        assert [
+            tuple(r)
+            for r in connection.execute("SELECT id, result_json FROM qa_runs ORDER BY position")
+        ] == [tuple(r) for r in snapshots]
+        assert [
+            tuple(r) for r in connection.execute("SELECT id, embedding_json FROM snippets")
+        ] == [tuple(r) for r in vectors]
+    duplicate = client.post(
+        "/kb/documents",
+        headers=HEADERS,
+        json={
+            "title": "Другое имя",
+            "text": client.get("/kb/documents/" + document["id"], headers=HEADERS).json()["text"],
+        },
+    ).json()
+    conflict = client.patch(
+        "/kb/documents/" + duplicate["id"], headers=HEADERS, json={"title": "Исправленное название"}
+    )
+    assert conflict.status_code == 409
+    assert (
+        client.patch(
+            "/kb/documents/" + document["id"], headers=HEADERS, json={"title": "   "}
+        ).status_code
+        == 422
+    )
+    client.post("/kb/documents/" + document["id"] + "/deactivate", headers=HEADERS)
+    assert (
+        client.get("/qa/" + answer["operation_id"], headers=HEADERS).json()["sources"][0][
+            "current_title"
+        ]
+        == "Исправленное название"
+    )
+
+
 class MemoryProvider(FakeProvider):
     def __init__(self):
         super().__init__()

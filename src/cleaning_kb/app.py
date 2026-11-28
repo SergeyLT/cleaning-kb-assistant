@@ -1,5 +1,6 @@
 """Фабрика HTTP-приложения и операции технической основы."""
 
+import json
 import logging
 import sqlite3
 from collections.abc import AsyncIterator, Callable
@@ -27,6 +28,7 @@ from cleaning_kb.locking import InstanceLock
 from cleaning_kb.logging_config import configure_logging, log_event, safe_frames
 from cleaning_kb.middleware import RequestMiddleware
 from cleaning_kb.provider import PROMPT_VERSION, Provider, ProxyProvider
+from cleaning_kb.provider_budget import BudgetReset, ProviderBudget, ProviderLimits
 from cleaning_kb.rag_models import (
     Answer,
     AskInput,
@@ -51,6 +53,7 @@ class Runtime:
     readiness: Readiness
     knowledge: KnowledgeService
     conversations: ConversationService
+    provider_budget: ProviderBudget
 
 
 class LoginInput(BaseModel):
@@ -123,6 +126,7 @@ def create_app(
                         Readiness(database, qdrant_probe or probe),
                         knowledge,
                         ConversationService(database, knowledge),
+                        ProviderBudget(settings, database),
                     )
                     log_event("application_started")
                     try:
@@ -362,6 +366,40 @@ def create_app(
     def deactivate_document(document_id: str, request: Request) -> dict[str, object]:
         return runtime_from(request).knowledge.deactivate(document_id, request.state.request_id)
 
+    @app.patch(
+        "/kb/documents/{document_id}",
+        dependencies=[Depends(require_access)],
+        summary="Переименовать документ без индексации",
+    )
+    def rename_document(document_id: str, data: RenameInput, request: Request) -> dict[str, object]:
+        return runtime_from(request).knowledge.rename(
+            document_id, data.title, request.state.request_id
+        )
+
+    @app.get(
+        "/settings/provider", dependencies=[Depends(require_access)], summary="Расход и лимиты"
+    )
+    def provider_settings(request: Request) -> dict[str, object]:
+        return runtime_from(request).provider_budget.status()
+
+    @app.put(
+        "/settings/provider", dependencies=[Depends(require_access)], summary="Сохранить лимиты"
+    )
+    def save_provider_settings(data: ProviderLimits, request: Request) -> dict[str, object]:
+        return runtime_from(request).provider_budget.save(
+            data, request.state.actor_type, request.state.actor_id, request.state.request_id
+        )
+
+    @app.post(
+        "/settings/provider/reset",
+        dependencies=[Depends(require_access)],
+        summary="Сбросить суточные счётчики без удаления истории",
+    )
+    def reset_provider_budget(data: BudgetReset, request: Request) -> dict[str, object]:
+        return runtime_from(request).provider_budget.reset(
+            request.state.actor_type, request.state.actor_id, request.state.request_id
+        )
+
     @app.post("/kb/ask", dependencies=[Depends(require_access)], summary="Ответить по базе знаний")
     def ask(data: AskInput, request: Request) -> Answer:
         if data.conversation_id is not None:
@@ -491,10 +529,10 @@ def create_app(
     ) -> list[dict[str, object]]:
         with runtime_from(request).database.connect() as connection:
             return [
-                dict(row)
+                dict(row) | {"details": json.loads(row["details_json"])}
                 for row in connection.execute(
                     "SELECT id, created_at, request_id, conversation_id, action, status, error, "
-                    "duration_ms "
+                    "duration_ms, actor_type, actor_id, details_json "
                     "FROM audit_runs "
                     + ("WHERE conversation_id=? " if conversation_id is not None else "")
                     + "ORDER BY id DESC LIMIT ? OFFSET ?",

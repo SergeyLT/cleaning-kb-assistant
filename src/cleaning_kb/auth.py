@@ -36,6 +36,7 @@ class Session:
 
     token_hash: str
     csrf_token: str
+    actor_id: str
 
 
 class AuthService:
@@ -87,8 +88,15 @@ class AuthService:
         with self.database.connect() as connection:
             connection.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (now,))
             connection.execute(
-                "INSERT INTO auth_sessions VALUES (?, ?, ?, ?)",
-                (token_hash(token), csrf_token, now, now + self.settings.session_ttl_seconds),
+                "INSERT INTO auth_sessions "
+                "(token_hash, csrf_token, created_at, expires_at, actor_id) VALUES (?, ?, ?, ?, ?)",
+                (
+                    token_hash(token),
+                    csrf_token,
+                    now,
+                    now + self.settings.session_ttl_seconds,
+                    self.settings.admin_username,
+                ),
             )
             self.database.audit(
                 "auth_login",
@@ -97,7 +105,7 @@ class AuthService:
                 connection=connection,
             )
         log_event("authentication_succeeded")
-        return token, Session(token_hash(token), csrf_token)
+        return token, Session(token_hash(token), csrf_token, self.settings.admin_username)
 
     def session(self, token: str | None) -> Session:
         """Проверить наличие и срок сессии в БД."""
@@ -105,12 +113,16 @@ class AuthService:
             raise authentication_error()
         with self.database.connect() as connection:
             row = connection.execute(
-                "SELECT csrf_token, expires_at FROM auth_sessions WHERE token_hash = ?",
+                "SELECT csrf_token, expires_at, actor_id FROM auth_sessions WHERE token_hash = ?",
                 (token_hash(token),),
             ).fetchone()
         if row is None or row["expires_at"] <= int(self.clock()):
             raise authentication_error()
-        return Session(token_hash(token), str(row["csrf_token"]))
+        return Session(
+            token_hash(token),
+            str(row["csrf_token"]),
+            row["actor_id"] or self.settings.admin_username,
+        )
 
     def authorize(self, request: Request) -> None:
         """Ключ API имеет явный приоритет; cookie требует CSRF для изменений."""
@@ -120,6 +132,8 @@ class AuthService:
                 key.encode("utf-8"), self.settings.api_key.get_secret_value().encode("utf-8")
             ):
                 raise authentication_error()
+            request.state.actor_type = "api_key"
+            request.state.actor_id = "service-api"
             return
         session = self.session(request.cookies.get(COOKIE_NAME))
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
@@ -130,6 +144,8 @@ class AuthService:
                 raise AppError(
                     403, "csrf_failed", "Проверка защиты запроса не пройдена", "authorization"
                 )
+        request.state.actor_type = "user"
+        request.state.actor_id = session.actor_id
 
     def logout(self, session: Session, request_id: str) -> None:
         """Удалить серверную сессию, включая возможность повторить старый cookie."""

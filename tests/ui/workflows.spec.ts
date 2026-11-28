@@ -23,6 +23,14 @@ test('Документ: валидация, индексация, вопрос �
   expect(await page.evaluate(() => (window as any).badHtml)).toBeUndefined();
   await page.getByRole('link', { name: 'Открыть документ' }).click();
   await expect(page.getByRole('heading', { name: 'Регламент с цитатой' })).toBeVisible();
+  await page.getByRole('button', { name: 'Переименовать', exact: true }).click();
+  await page.getByRole('dialog').getByLabel('Название документа').fill('Исправленный регламент');
+  await page.getByRole('dialog').getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Исправленный регламент' })).toBeVisible();
+  await page.getByRole('link', { name: '← Назад', exact: true }).click();
+  await page.getByText('Источники (1)', { exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Исправленный регламент' })).toBeVisible();
+  await page.getByRole('link', { name: 'Открыть документ' }).click();
   await page.getByRole('button', { name: 'Повторить индексацию' }).click();
   await expect(page.getByRole('button', { name: 'Повторить индексацию' })).toBeEnabled();
   await page.getByRole('button', { name: 'Исключить из поиска' }).click();
@@ -178,4 +186,37 @@ test('Ошибка и лимит: ввод сохраняется, повтор�
   await expect(page.getByLabel('Вопрос по обращению')).toHaveValue('Не потерять этот вопрос');
   await expect(page.getByRole('button', { name: 'Отправить вопрос' })).toBeDisabled();
   expect(sent).toBe(2);
+});
+
+test('Лимиты: сохранение, валидация, подтверждение сброса и автор в журнале', async ({ signedPage: page }) => {
+  await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Лимиты', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Расход и лимиты', exact: true })).toBeVisible();
+  const daily = page.getByRole('spinbutton', { name: 'Вызовы за сутки', exact: true });
+  const original = await daily.inputValue();
+  await daily.fill('0');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  expect(await daily.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(false);
+  await daily.fill('300');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Лимиты сохранены');
+  await page.reload();
+  await expect(daily).toHaveValue('300');
+  await page.getByRole('button', { name: 'Сбросить суточные счётчики', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(page.locator('[data-last-reset]')).toHaveText('Сбросов ещё не было.');
+  await page.getByRole('button', { name: 'Сбросить суточные счётчики', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Сбросить счётчики', exact: true }).click();
+  await expect(page.locator('[data-last-reset]')).toContainText('Выполнил: manager');
+  await noOverflow(page);
+  if (process.env.UI_CAPTURE === 'settings') {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: 'output/stage7-settings-desktop.png', fullPage: true, animations: 'disabled' });
+  }
+  await page.getByRole('link', { name: 'История изменений', exact: true }).click();
+  await expect(page.getByText('Суточные счётчики сброшены', { exact: true })).toBeVisible();
+  await expect(page.getByText('Выполнил: manager', { exact: true }).first()).toBeVisible();
+  await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Лимиты', exact: true }).click();
+  await daily.fill(original);
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Лимиты сохранены');
 });

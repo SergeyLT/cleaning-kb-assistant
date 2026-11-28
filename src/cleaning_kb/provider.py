@@ -3,17 +3,17 @@
 import json
 import math
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Protocol
-from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel
 
 from cleaning_kb.config import Settings
-from cleaning_kb.database import Database, utc_now
+from cleaning_kb.database import Database
 from cleaning_kb.errors import AppError
 from cleaning_kb.logging_config import log_event
+from cleaning_kb.provider_budget import ProviderBudget
 from cleaning_kb.rag_models import Evidence, ModelAnswer, ModelSummary, Rewrite
 
 PROMPT_VERSION = "rag-v6"
@@ -81,40 +81,14 @@ class ProxyProvider:
 
     def __init__(self, settings: Settings, database: Database, client: httpx.Client) -> None:
         self.settings, self.database, self.client = settings, database, client
+        self.budget = ProviderBudget(settings, database)
 
     def _reserve(self, kind: str, model: str, tokens: int, operation_id: str) -> str:
         if not self.settings.proxyapi_key:
             raise AppError(
                 503, "provider_not_configured", "Не настроен ключ ProxyAPI", "configuration"
             )
-        now = datetime.now(UTC)
-        minute = (now - timedelta(minutes=1)).isoformat()
-        day = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        call_id = str(uuid4())
-        with self.database.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            counts = connection.execute(
-                "SELECT COALESCE(SUM(created_at >= ?), 0), "
-                "COALESCE(SUM(CASE WHEN created_at >= ? THEN reserved_tokens ELSE 0 END), 0), "
-                "COALESCE(SUM(created_at >= ?), 0) FROM provider_calls WHERE created_at >= ?",
-                (day, day, minute, min(day, minute)),
-            ).fetchone()
-            if (
-                counts[0] >= self.settings.provider_calls_per_day
-                or counts[1] + tokens > self.settings.provider_token_budget_per_day
-                or counts[2] >= self.settings.provider_calls_per_minute
-            ):
-                raise AppError(
-                    429,
-                    "provider_budget_exceeded",
-                    "Достигнут лимит обращений к модели; повторите позже",
-                    "rate_limit",
-                )
-            connection.execute(
-                "INSERT INTO provider_calls VALUES (?, ?, ?, ?, ?, ?, 'started', NULL, NULL)",
-                (call_id, utc_now(), operation_id, kind, model, tokens),
-            )
-        return call_id
+        return self.budget.reserve(kind, model, tokens, operation_id, datetime.now(UTC))
 
     def _call(
         self, path: str, payload: dict[str, Any], operation_id: str, kind: str

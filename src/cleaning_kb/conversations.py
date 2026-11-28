@@ -15,6 +15,7 @@ from cleaning_kb.kb_service import KnowledgeService, pipeline_error
 from cleaning_kb.logging_config import log_event
 from cleaning_kb.provider import SUMMARY_PROMPT_VERSION
 from cleaning_kb.rag_models import Answer, ModelSummary, Rewrite, legacy_answer_view, safe_answer
+from cleaning_kb.source_views import source_names_view
 
 VERIFICATION_NOTICE = (
     "Отметка сотрудника означает только факт проверки или уточнения. "
@@ -117,12 +118,15 @@ class ConversationService:
                     (conversation_id,),
                 )
             ]
-        return {
-            **conversation,
-            "runs": runs,
-            "budget": self.budget.status(history),
-            "busy": any(row["state"] == "running" for row in runs),
-        }
+        return source_names_view(
+            {
+                **conversation,
+                "runs": runs,
+                "budget": self.budget.status(history),
+                "busy": any(row["state"] == "running" for row in runs),
+            },
+            self.database,
+        )
 
     def rename(self, conversation_id: str, title: str, request_id: str) -> dict[str, Any]:
         with self.database.connect() as connection:
@@ -303,7 +307,7 @@ class ConversationService:
         self, *, pending_only: bool = False, limit: int = 100, offset: int = 0
     ) -> list[dict[str, Any]]:
         with self.database.connect() as connection:
-            return [
+            runs = [
                 decode_run(row, row["current_revision"])
                 for row in connection.execute(
                     "SELECT q.*, c.revision AS current_revision FROM qa_runs q "
@@ -319,6 +323,7 @@ class ConversationService:
                     (limit, offset),
                 )
             ]
+        return source_names_view(runs, self.database)
 
     def summary(self, conversation_id: str, request_id: str) -> dict[str, Any]:
         if not self.knowledge.operation_slots.acquire(blocking=False):
@@ -524,4 +529,4 @@ class ConversationService:
             ).fetchone()
         if row is None:
             raise AppError(404, "operation_not_found", "Операция не найдена", "business_rule")
-        return decode_run(row, row["current_revision"])
+        return source_names_view(decode_run(row, row["current_revision"]), self.database)

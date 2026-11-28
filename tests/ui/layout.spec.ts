@@ -6,7 +6,7 @@ test('Компоновка ключевых экранов и длинного �
   await ask(page, 'ВопросБезПробелов'.repeat(90));
   for (const size of [{ width: 375, height: 812 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }]) {
     await page.setViewportSize(size);
-    for (const hash of [`dialogs/${cid}`, 'documents', 'history']) {
+    for (const hash of [`dialogs/${cid}`, 'documents', 'history', 'settings']) {
       await page.goto('/#' + hash);
       await expect(page.locator('#view')).toHaveAttribute('aria-busy', 'false');
       await noOverflow(page);

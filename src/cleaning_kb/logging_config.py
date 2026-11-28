@@ -12,6 +12,10 @@ from pathlib import Path
 
 REQUEST_ID: ContextVar[str | None] = ContextVar("request_id", default=None)
 EVENTS = {
+    "provider_budget_rejected": "Превышен конкретный лимит провайдера",
+    "provider_limits_updated": "Лимиты провайдера изменены",
+    "provider_budget_reset": "Начат новый суточный отсчёт расхода",
+    "document_renamed": "Документ переименован",
     "application_started": "Приложение запущено",
     "application_stopped": "Приложение остановлено",
     "startup_failed": "Приложение не смогло запуститься",
@@ -29,6 +33,16 @@ EVENTS = {
     "rag_operation_failed": "Операция базы знаний не выполнена",
 }
 FIELDS = {
+    "limit_kind",
+    "exceeded_limits",
+    "used",
+    "limit",
+    "requested",
+    "remaining",
+    "period_started_at",
+    "actor_type",
+    "actor_id",
+    "document_id",
     "model",
     "usage_available",
     "input_tokens",

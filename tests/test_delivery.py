@@ -159,7 +159,7 @@ def test_sqlite_backup_contains_committed_wal_and_is_restorable(tmp_path: Path) 
     with restored.connect() as connection:
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert connection.execute("SELECT title FROM conversations").fetchone()[0] == "Обращение"
-        assert connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 3
+        assert connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 4
 
 
 def test_backup_never_overwrites_existing_file_and_removes_failed_copy(tmp_path: Path) -> None:

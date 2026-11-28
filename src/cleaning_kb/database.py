@@ -112,6 +112,9 @@ class Database:
         error: str | None = None,
         duration_ms: int = 0,
         conversation_id: str | None = None,
+        actor_type: str | None = None,
+        actor_id: str | None = None,
+        details: dict[str, object] | None = None,
         connection: sqlite3.Connection | None = None,
     ) -> None:
         """Записать техническую операцию доступа без реквизитов и cookie."""
@@ -124,14 +127,17 @@ class Database:
                     error=error,
                     duration_ms=duration_ms,
                     conversation_id=conversation_id,
+                    actor_type=actor_type,
+                    actor_id=actor_id,
+                    details=details,
                     connection=transaction,
                 )
         else:
             connection.execute(
                 "INSERT INTO audit_runs "
                 "(created_at, request_id, action, input, output, status, error, "
-                "duration_ms, conversation_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "duration_ms, conversation_id, actor_type, actor_id, details_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     utc_now(),
                     request_id,
@@ -142,5 +148,8 @@ class Database:
                     error,
                     max(0, duration_ms),
                     conversation_id,
+                    actor_type,
+                    actor_id,
+                    json.dumps(details or {}, ensure_ascii=False),
                 ),
             )

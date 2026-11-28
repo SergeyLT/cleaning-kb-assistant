@@ -28,6 +28,7 @@ def test_api_and_schema_require_access(client: TestClient) -> None:
         "001_initial.sql",
         "002_provider_calls.sql",
         "003_conversations.sql",
+        "004_provider_settings.sql",
     ]
     schema = client.get("/openapi.json", headers={"X-API-Key": API_KEY})
     assert schema.status_code == 200
